@@ -22,7 +22,7 @@ class FakeResponse:
         return json.dumps(self.payload).encode("utf-8")
 
 
-def valid_payload():
+def destination_payload():
     return {
         "code": "10034",
         "district": "Kampala",
@@ -31,6 +31,14 @@ def valid_payload():
         "population_covered": 3768,
         "latitude": 0.49729955933456793,
         "longitude": 32.667045285449205,
+    }
+
+
+def ugamap_payload():
+    return {
+        "ok": True,
+        "source": "UNG-ZIPPER",
+        "destination": destination_payload(),
     }
 
 
@@ -54,8 +62,8 @@ def test_normalize_zip_rejects_more_than_five_digits():
     assert (exc.value.status_code, exc.value.detail) == (422, "destination_zip_must_be_1_to_5_digits")
 
 
-def test_resolve_destination_maps_upstream(monkeypatch):
-    monkeypatch.setattr(destination.urllib.request, "urlopen", lambda *a, **k: FakeResponse(valid_payload()))
+def test_resolve_destination_maps_nested_ugamap_response(monkeypatch):
+    monkeypatch.setattr(destination.urllib.request, "urlopen", lambda *a, **k: FakeResponse(ugamap_payload()))
     assert resolve_destination_zip("10034") == {
         "ok": True,
         "code": "10034",
@@ -93,9 +101,9 @@ def test_resolve_destination_translates_network_failure(monkeypatch):
     assert (exc.value.status_code, exc.value.detail) == (503, "ugamap_unavailable")
 
 
-def test_resolve_destination_rejects_malformed_payload(monkeypatch):
-    payload = valid_payload()
-    payload["latitude"] = None
+def test_resolve_destination_rejects_malformed_nested_payload(monkeypatch):
+    payload = ugamap_payload()
+    payload["destination"]["latitude"] = None
     monkeypatch.setattr(destination.urllib.request, "urlopen", lambda *a, **k: FakeResponse(payload))
     with pytest.raises(DestinationError) as exc:
         resolve_destination_zip("10034")
