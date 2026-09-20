@@ -42,6 +42,23 @@ class LoadTestBatch(BaseModel):
     transactions: list[LoadTestTransaction] = Field(min_length=1, max_length=12000)
 
 
+class ShipmentPerformanceIn(BaseModel):
+    shipment_id: str = Field(min_length=1, max_length=120)
+    order_id: str = Field(min_length=1, max_length=120)
+    dispatched_at: str
+    delivered_at: str | None = None
+    promised_at: str | None = None
+    freight_cost: float = Field(default=0, ge=0)
+    order_value: float = Field(default=0, ge=0)
+    delivered_in_full: bool = True
+    damage_free: bool = True
+    documentation_complete: bool = True
+    service_level_target_minutes: float | None = Field(default=None, ge=0)
+
+
+SHIPMENT_PERFORMANCE: list[dict[str, Any]] = []
+
+
 def resolve_or_http_error(code: str) -> dict:
     try:
         return resolve_destination_zip(code)
@@ -111,3 +128,39 @@ def ingest_load_test(body: LoadTestBatch) -> dict[str, Any]:
         "mode": "synthetic-load-test",
         "persisted": False,
     }
+
+
+@app.post("/v1/performance/shipments", status_code=201)
+def record_shipment_performance(body: ShipmentPerformanceIn):
+    from datetime import datetime
+    def dt(v):
+        if not v: return None
+        return datetime.fromisoformat(v.replace("Z","+00:00"))
+    dispatched=dt(body.dispatched_at); delivered=dt(body.delivered_at); promised=dt(body.promised_at)
+    if delivered and delivered < dispatched: raise HTTPException(422,"delivered_before_dispatched")
+    row=body.model_dump()
+    row["delivery_lead_minutes"]=((delivered-dispatched).total_seconds()/60.0) if delivered else None
+    row["on_time"]=(delivered<=promised) if delivered and promised else None
+    row["perfect_order"]=bool(delivered and row["on_time"] is not False and body.delivered_in_full and body.damage_free and body.documentation_complete)
+    SHIPMENT_PERFORMANCE.append(row)
+    if len(SHIPMENT_PERFORMANCE)>10000: del SHIPMENT_PERFORMANCE[:len(SHIPMENT_PERFORMANCE)-10000]
+    return row
+
+@app.get("/v1/performance/kpis")
+def shipment_kpis():
+    rows=SHIPMENT_PERFORMANCE
+    delivered=[r for r in rows if r.get("delivered_at")]
+    timed=[r for r in delivered if r.get("on_time") is not None]
+    total_freight=sum(float(r.get("freight_cost") or 0) for r in rows)
+    total_value=sum(float(r.get("order_value") or 0) for r in rows)
+    leads=[float(r["delivery_lead_minutes"]) for r in delivered if r.get("delivery_lead_minutes") is not None]
+    perfect=sum(1 for r in delivered if r.get("perfect_order"))
+    service=[r for r in delivered if r.get("service_level_target_minutes") is not None and r.get("delivery_lead_minutes") is not None]
+    return {"source_system":"UGASHIP","observations":[
+      {"kpi_key":"on_time_delivery_rate","value":round(100*sum(1 for r in timed if r["on_time"])/len(timed),4) if timed else None},
+      {"kpi_key":"freight_cost_per_shipment","value":round(total_freight/len(rows),4) if rows else None},
+      {"kpi_key":"logistics_cost_ratio","value":round(100*total_freight/total_value,4) if total_value>0 else None},
+      {"kpi_key":"delivery_lead_time","value":round(sum(leads)/len(leads),4) if leads else None},
+      {"kpi_key":"perfect_order_fulfillment","value":round(100*perfect/len(delivered),4) if delivered else None},
+      {"kpi_key":"service_level_achievement","value":round(100*sum(1 for r in service if r["delivery_lead_minutes"]<=r["service_level_target_minutes"])/len(service),4) if service else None}
+    ],"records":len(rows)}
