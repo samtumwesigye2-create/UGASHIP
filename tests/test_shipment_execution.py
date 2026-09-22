@@ -17,6 +17,7 @@ def test_happy_path_shipment_state_machine():
         'package_count':1,
         'total_weight_kg':5,
         'freight_cost':14,
+        'order_value':120,
         'currency':'USD',
     })
     assert r.status_code==201
@@ -35,10 +36,15 @@ def test_happy_path_shipment_state_machine():
         rr=client.post(f'/v1/shipments/{sid}/{endpoint}',json=payload)
         assert rr.status_code==200, rr.text
         assert rr.json()['shipment']['status']==status
+        if endpoint=='pod':
+            assert rr.json()['finance_event']['message_type']=='UGASHIP.POD.CONFIRMED'
 
     rr=client.post(f'/v1/shipments/{sid}/close')
     assert rr.status_code==200
     assert rr.json()['shipment']['status']=='closed'
+    assert rr.json()['finance_event']['message_type']=='UGASHIP.SHIPMENT.CLOSED'
+    assert rr.json()['finance_event']['payload']['freight_cost']==14
+    assert rr.json()['finance_event']['payload']['order_value']==120
 
 def test_cannot_skip_shipment_states():
     r=client.post('/v1/shipments',json={
