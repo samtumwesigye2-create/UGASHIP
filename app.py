@@ -5,6 +5,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from destination import DestinationError, resolve_destination_zip
+from shipment_execution import router as shipment_execution_router
 
 VERSION = "0.2.0"
 app = FastAPI(title="UGASHIP", version=VERSION)
@@ -164,3 +165,5 @@ def shipment_kpis():
       {"kpi_key":"perfect_order_fulfillment","value":round(100*perfect/len(delivered),4) if delivered else None},
       {"kpi_key":"service_level_achievement","value":round(100*sum(1 for r in service if r["delivery_lead_minutes"]<=r["service_level_target_minutes"])/len(service),4) if service else None}
     ],"records":len(rows)}
+
+app.include_router(shipment_execution_router)
