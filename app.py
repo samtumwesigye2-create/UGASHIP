@@ -2,6 +2,7 @@ from time import perf_counter
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from destination import DestinationError, resolve_destination_zip
@@ -164,3 +165,34 @@ def shipment_kpis():
       {"kpi_key":"perfect_order_fulfillment","value":round(100*perfect/len(delivered),4) if delivered else None},
       {"kpi_key":"service_level_achievement","value":round(100*sum(1 for r in service if r["delivery_lead_minutes"]<=r["service_level_target_minutes"])/len(service),4) if service else None}
     ],"records":len(rows)}
+
+
+UI_HTML = r"""<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>UGASHIP</title>
+<style>
+:root{--bg:#f4f6f8;--card:#fff;--ink:#111827;--muted:#667085;--line:#e5e7eb;--nav:#101828}*{box-sizing:border-box}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--ink)}header{background:var(--nav);color:#fff;padding:18px}header div{max-width:980px;margin:auto}main{max-width:980px;margin:auto;padding:20px}.hero h1{margin:0 0 6px;font-size:30px}.hero p{margin:0;color:var(--muted)}.actions{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:20px 0}.action{background:#fff;border:1px solid var(--line);border-radius:18px;padding:18px;text-align:left;cursor:pointer}.action strong{display:block;font-size:18px;margin-bottom:5px}.card{background:#fff;border:1px solid var(--line);border-radius:18px;padding:18px;margin-top:14px}.hidden{display:none}.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}label{display:grid;gap:6px;font-size:13px;font-weight:700}input,button{font:inherit}input{padding:12px;border:1px solid #d0d5dd;border-radius:10px}button{padding:12px 15px;border:0;border-radius:10px;background:var(--nav);color:#fff;font-weight:800;cursor:pointer}.secondary{background:#eef2f6;color:var(--ink)}.msg{margin-top:12px;white-space:pre-wrap}.muted{color:var(--muted)}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:10px;border-bottom:1px solid var(--line);font-size:13px}@media(max-width:700px){.actions{grid-template-columns:1fr}.row{grid-template-columns:1fr}}</style></head><body>
+<header><div><strong>UGASHIP</strong><div style="font-size:12px;color:#d0d5dd">Simple Logistics Console</div></div></header>
+<main><section class="hero"><h1>What do you want to do?</h1><p>Validate a destination, record a delivery, or check logistics performance.</p></section>
+<div class="actions">
+<button class="action secondary" onclick="show('destination')"><strong>Validate Destination</strong><span class="muted">Check routing before shipping</span></button>
+<button class="action secondary" onclick="show('delivery')"><strong>Record Delivery</strong><span class="muted">Capture dispatch and delivery performance</span></button>
+<button class="action secondary" onclick="show('kpis');loadKpis()"><strong>View KPIs</strong><span class="muted">On-time delivery, freight cost, lead time</span></button>
+</div>
+<section id="destination" class="card"><h2>Validate Destination</h2><div class="row"><label>Destination ZIP / code<input id="zip"></label><div style="align-self:end"><button onclick="validateZip()">Check destination</button></div></div><div id="destinationMsg" class="msg"></div></section>
+<section id="delivery" class="card hidden"><h2>Record Delivery</h2><div class="row"><label>Shipment ID<input id="shipmentId"></label><label>Order ID<input id="orderId"></label><label>Dispatched at<input id="dispatched" type="datetime-local"></label><label>Delivered at<input id="delivered" type="datetime-local"></label><label>Promised at<input id="promised" type="datetime-local"></label><label>Freight cost<input id="freight" type="number" min="0" step="0.01" value="0"></label><label>Order value<input id="orderValue" type="number" min="0" step="0.01" value="0"></label></div><div style="margin-top:14px"><button onclick="recordDelivery()">Save delivery</button></div><div id="deliveryMsg" class="msg"></div></section>
+<section id="kpis" class="card hidden"><h2>Logistics KPIs</h2><button onclick="loadKpis()">Refresh</button><div id="kpiBox" class="msg"></div></section>
+</main><script>
+function show(id){for(const x of ['destination','delivery','kpis'])document.getElementById(x).classList.toggle('hidden',x!==id)}
+async function jfetch(path,opt){const r=await fetch(path,opt);let d={};try{d=await r.json()}catch(e){}if(!r.ok)throw Error(typeof d.detail==='string'?d.detail:'Request failed');return d}
+async function validateZip(){const box=document.getElementById('destinationMsg');box.textContent='Checking…';try{const d=await jfetch('/v1/shipments/validate-destination',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({destination_zip:document.getElementById('zip').value.trim()})});box.textContent=JSON.stringify(d,null,2)}catch(e){box.textContent=e.message}}
+function iso(id){const v=document.getElementById(id).value;return v?new Date(v).toISOString():null}
+async function recordDelivery(){const box=document.getElementById('deliveryMsg');box.textContent='Saving…';try{const body={shipment_id:shipmentId.value.trim(),order_id:orderId.value.trim(),dispatched_at:iso('dispatched'),delivered_at:iso('delivered'),promised_at:iso('promised'),freight_cost:Number(freight.value||0),order_value:Number(orderValue.value||0),delivered_in_full:true,damage_free:true,documentation_complete:true};const d=await jfetch('/v1/performance/shipments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});box.textContent='Saved. '+(d.on_time===true?'On time.':d.on_time===false?'Late.':'Delivery recorded.')}catch(e){box.textContent=e.message}}
+async function loadKpis(){const box=document.getElementById('kpiBox');box.textContent='Loading…';try{const d=await jfetch('/v1/performance/kpis');const rows=(d.observations||[]).map(x=>'<tr><td>'+x.kpi_key.replaceAll('_',' ')+'</td><td>'+((x.value??'—'))+'</td></tr>').join('');box.innerHTML='<table><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody>'+rows+'</tbody></table>'}catch(e){box.textContent=e.message}}
+</script></body></html>"""
+
+@app.get("/console", response_class=HTMLResponse)
+def console():
+    return HTMLResponse(UI_HTML, headers={"Cache-Control":"no-store"})
+
+@app.get("/ui", response_class=HTMLResponse)
+def ui():
+    return HTMLResponse(UI_HTML, headers={"Cache-Control":"no-store"})
