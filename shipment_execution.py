@@ -64,6 +64,7 @@ class ShipmentCreateIn(BaseModel):
     package_count: int = Field(gt=0)
     total_weight_kg: float = Field(ge=0)
     freight_cost: float = Field(default=0, ge=0)
+    order_value: float = Field(default=0, ge=0)
     currency: str = Field(default="USD", min_length=3, max_length=3)
 
 class BookingIn(BaseModel):
@@ -103,6 +104,7 @@ def create_shipment(body: ShipmentCreateIn):
         "package_count": body.package_count,
         "total_weight_kg": body.total_weight_kg,
         "freight_cost": body.freight_cost,
+        "order_value": body.order_value,
         "currency": body.currency.upper(),
         "status": "planned",
         "created_at": t,
@@ -147,11 +149,41 @@ def add_tracking(shipment_id: str, body: TrackingIn):
 
 @router.post("/{shipment_id}/pod")
 def confirm_pod(shipment_id: str, body: PODIn):
-    return _transition(shipment_id, "pod_confirmed", "pod.recorded", body.model_dump())
+    result=_transition(shipment_id, "pod_confirmed", "pod.recorded", body.model_dump())
+    row=result["shipment"]
+    result["finance_event"]={
+        "source_system":"UGASHIP",
+        "target_system":"UNG-MIDAS",
+        "message_type":"UGASHIP.POD.CONFIRMED",
+        "payload":{
+            "shipment_id":shipment_id,
+            "order_reference":row["order_reference"],
+            "freight_cost":row["freight_cost"],
+            "order_value":row["order_value"],
+            "currency":row["currency"],
+            "pod_confirmed":True,
+        },
+    }
+    return result
 
 @router.post("/{shipment_id}/close")
 def close_shipment(shipment_id: str):
-    return _transition(shipment_id, "closed", "shipment.closed")
+    result=_transition(shipment_id, "closed", "shipment.closed")
+    row=result["shipment"]
+    result["finance_event"]={
+        "source_system":"UGASHIP",
+        "target_system":"UNG-MIDAS",
+        "message_type":"UGASHIP.SHIPMENT.CLOSED",
+        "payload":{
+            "shipment_id":shipment_id,
+            "order_reference":row["order_reference"],
+            "freight_cost":row["freight_cost"],
+            "order_value":row["order_value"],
+            "currency":row["currency"],
+            "pod_confirmed":True,
+        },
+    }
+    return result
 
 @router.get("/{shipment_id}")
 def get_shipment(shipment_id: str):
