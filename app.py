@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from destination import DestinationError, resolve_destination_zip
 
 VERSION = "0.2.0"
-app = FastAPI(title="UGASHIP", version=VERSION)
+app = FastAPI(title="UGASHIP", version=VERSION)\nimport janus_gate\njanus_gate.install(app, "UGASHIP")
 
 
 class DestinationValidationIn(BaseModel):
