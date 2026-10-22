@@ -43,18 +43,21 @@ def resolve_destination_zip(code: str) -> dict:
     except Exception as exc:
         raise DestinationError(503, "ugamap_unavailable") from exc
 
-    if any(payload.get(key) is None for key in ("code", "latitude", "longitude")):
+    destination = payload.get("destination") if isinstance(payload, dict) else None
+    if not isinstance(destination, dict):
+        raise DestinationError(502, "ugamap_destination_invalid")
+    if any(destination.get(key) is None for key in ("code", "latitude", "longitude")):
         raise DestinationError(502, "ugamap_destination_invalid")
 
     return {
         "ok": True,
-        "code": str(payload["code"]).zfill(5),
-        "district": payload.get("district"),
-        "name": payload.get("name") or payload.get("district"),
-        "area_type": payload.get("area_type"),
-        "population_covered": payload.get("population_covered"),
-        "latitude": payload["latitude"],
-        "longitude": payload["longitude"],
+        "code": str(destination["code"]).zfill(5),
+        "district": destination.get("district"),
+        "name": destination.get("name") or destination.get("district"),
+        "area_type": destination.get("area_type"),
+        "population_covered": destination.get("population_covered"),
+        "latitude": destination["latitude"],
+        "longitude": destination["longitude"],
         "route_ready": True,
         "source": "UNG-ZIPPER->UGAMAP",
     }
