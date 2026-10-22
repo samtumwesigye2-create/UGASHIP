@@ -6,9 +6,11 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from destination import DestinationError, resolve_destination_zip
+from shipment_execution import router as shipment_execution_router
 
 VERSION = "0.2.0"
 app = FastAPI(title="UGASHIP", version=VERSION)
+app.include_router(shipment_execution_router)
 import janus_gate
 janus_gate.install(app, "UGASHIP")
 
