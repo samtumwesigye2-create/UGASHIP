@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 import app as app_module
 from destination import DestinationError
 
-client = TestClient(app_module.app)
+client = TestClient(app_module.app, headers={'Authorization':'Bearer test-token'})
 
 DESTINATION = {
     "ok": True,
@@ -22,7 +22,7 @@ DESTINATION = {
 def test_health():
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "service": "UGASHIP", "version": "0.1.0"}
+    assert response.json() == {"status": "ok", "service": "UGASHIP", "version": app_module.VERSION}
 
 
 def test_destination_lookup(monkeypatch):
