@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 from app import app
 from shipment_execution import SHIPMENTS, EVENTS
 
-client=TestClient(app)
+client=TestClient(app, headers={'Authorization':'Bearer test-token'})
 
 def setup_function():
     SHIPMENTS.clear()
